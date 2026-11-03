@@ -83,6 +83,8 @@
 % 段首不缩进、段与段之间留小空档，靠标题横线和表格底色分区
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.5em}
+% 长代码串（std::chrono::steady_clock 之类）不能断词，给一点弹性，免得行尾冲出版心
+\setlength{\emergencystretch}{2em}
 
 \begin{document}
 
@@ -307,19 +309,19 @@ dfs():
 
 \begin{table}[htbp]
 \centering
-\caption{边界用例：输入、期望、实际}
-\small
-\begin{tabular}{lllll}
+\caption{边界用例（目的 / 期望 / 实际 / 状态）}
+\footnotesize
+\begin{tabular}{@{}llp{5.4cm}lll@{}}
 \toprule
-\rowcolor{gray!12}用例 & 规模 & 要点 & 期望 & 实际 \\
+\rowcolor{gray!12}用例 & 规模 & 目的（考什么） & 期望 & 实际 & 状态 \\
 \midrule
-\code{edge1-empty} & 3×3 & 全 0，没有连接器 & 输出为空 & 空 \checkmark \\
-\code{edge2-single} & 2×2 & 只有一个 $k=1$ 的点 & \code{No Solution} & \code{No Solution} \checkmark \\
-\code{edge3-pair} & 2×3 & 一行两个 $k=1$ 的点 & 一条横线 & 合法 \checkmark \\
-\code{edge4-odd} & 2×3 & 三个 $k=1$，总度数为奇 & \code{No Solution} & \code{No Solution} \checkmark \\
-\code{edge5-cross} & 3×3 & 上下左右各一个 $k=1$，只能交叉 & \code{No Solution} & \code{No Solution} \checkmark \\
-\code{edge6-plus} & 3×3 & 中心 $k=4$，四向各一个 $k=1$ & 十字 & 合法 \checkmark \\
-\code{edge7-zero50} & 50×50 & 全 0，压规模 & 输出为空 & 空 \checkmark \\
+\code{edge1-empty} & 3×3 & 全 0，一个连接器都没有 & 输出为空 & 空 & 通过 \\
+\code{edge2-single} & 2×2 & 只有一个 $k=1$ 的点，无邻点可接 & \code{No Solution} & \code{No Solution} & 通过 \\
+\code{edge3-pair} & 2×3 & 一行两个 $k=1$ 的点，最简可解实例 & 一条横线 & 合法解 & 通过 \\
+\code{edge4-odd} & 2×3 & 三个 $k=1$，总度数为奇 & \code{No Solution} & \code{No Solution} & 通过 \\
+\code{edge5-cross} & 3×3 & 上下左右各一个 $k=1$，唯一铺法要交叉 & \code{No Solution} & \code{No Solution} & 通过 \\
+\code{edge6-plus} & 3×3 & 中心 $k=4$，四向各一个 $k=1$ & 十字 & 合法解 & 通过 \\
+\code{edge7-zero50} & 50×50 & 全 0，压到规模上限看会不会出事 & 输出为空 & 空 & 通过 \\
 \bottomrule
 \end{tabular}
 \end{table}
