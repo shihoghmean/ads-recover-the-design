@@ -1,0 +1,29 @@
+# 构建产物
+build/
+*.o
+*.obj
+*.exe
+*.pdb
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 本地产物：基准输出、调试用例、临时脚本、转图用的 PNG，都不入库也不进提交包
+data/
+documents/png/
+documents/_sheet.py
+
+# 编辑器与系统
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+
+# LaTeX 中间文件（只要 .tex 和 .pdf）
+documents/*.aux
+documents/*.log
+documents/*.out
+documents/*.toc
+documents/*.synctex.gz

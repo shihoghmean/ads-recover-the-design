@@ -1,0 +1,625 @@
+% 编译：在 documents/ 目录里跑 xelatex report.tex 两遍
+\documentclass[12pt,a4paper,fontset=windows]{ctexart}
+
+\usepackage{geometry}
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{colortbl}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage[nobottomtitles*]{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+\setmainfont{Times New Roman}
+\setmonofont{Consolas}
+% 中文引号按 CJK 标点处理，否则 xeCJK 会在引号与汉字之间插一段西文胶，读起来像多了空格
+\xeCJKDeclareCharClass{CJK}{"2018, "2019, "201C, "201D}
+
+% 互评阶段的匿名版本：PDF 属性里也不留作者
+\hypersetup{
+  pdftitle={Recover the Design: Solving Degree-Constrained Fence Layouts by Propagation and Backtracking},
+  pdfauthor={},
+  pdfsubject={},
+  pdfkeywords={},
+  pdfcreator={},
+  pdfcreationdate={D:20261103120000+08'00'},
+  pdfmoddate={D:20261103120000+08'00'}
+}
+
+% 章标题照 Word 模板：顶格、粗体，「Chapter N:」后半角空格再接章名
+\titleformat{\section}{\raggedright\bfseries\fontsize{14}{17}\selectfont}{Chapter \thesection:}{0.9em}{}[{\color{black}\titlerule[0.9pt]}]
+\titlespacing*{\section}{0pt}{1.3em}{0.65em}
+\titleformat{\subsection}{\raggedright\bfseries\fontsize{12}{15}\selectfont}{\thesubsection}{0.7em}{}[{\color{black}\titlerule[0.4pt]}]
+\titlespacing*{\subsection}{0pt}{1.2em}{0.55em}
+\titleformat{\subsubsection}{\raggedright\bfseries}{\thesubsubsection}{0.6em}{}
+
+\lstdefinestyle{pseudo}{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=none,
+  xleftmargin=1.2em,
+  aboveskip=0.5em,
+  belowskip=0.5em,
+  breaklines=true,
+  escapeinside={(*@}{@*)}
+}
+\lstset{style=pseudo}
+
+% 附录里的源码：小一号、带行号，长行折行
+\lstdefinestyle{cppsrc}{
+  language=C++,
+  basicstyle=\ttfamily\scriptsize,
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  numbersep=6pt,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=none,
+  xleftmargin=2.2em,
+  aboveskip=0.4em,
+  belowskip=0.4em,
+  breaklines=true,
+  breakatwhitespace=false,
+  tabsize=4,
+  showstringspaces=false,
+  extendedchars=true,
+  inputencoding=utf8
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\tabhead}[1]{\textbf{#1}}
+
+\pagestyle{plain}
+
+% 段首不缩进、段与段之间留小空档，靠标题横线和表格底色分区
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.0cm}
+{\bfseries\fontsize{24}{31}\selectfont Recover the Design: Solving\\[0.3em]
+Degree-Constrained Fence Layouts\\[0.3em]
+by Propagation and Backtracking}
+
+\vspace{1.6cm}
+{\bfseries\fontsize{15}{20}\selectfont Authors: Member A, Member B, Member C}
+
+\vspace{1.2cm}
+{\bfseries\fontsize{13}{16}\selectfont Date: 2026-11-03}
+\end{titlepage}
+
+\section{Introduction}
+
+\subsection{题目要求}
+
+题面给的是一张 $n$ 行 $m$ 列的棋盘（$1<n,m\le 50$）。每个格子要么是空的（记 0），要么放了一个“连接器”，格里写的 $k\in\{1,2,3,4\}$ 就是这个连接器要接出去的栅栏条数。栅栏只能沿行或沿列、必须笔直，两端各落在一个连接器上；两个连接器之间如果还隔着别的连接器，就不能直接相连；两条栅栏不允许在没有连接器的格子里十字交叉（在没有连接器的格子里交叉等于两条线在同一个空格里叠着，题面明确禁止）。要求是：
+
+\begin{enumerate}[itemsep=2pt,topsep=2pt]
+  \item 每个连接器接出的栅栏条数恰好等于 $k$；
+  \item 给出任意一个合法铺法；如果无解，输出一行 \code{No Solution}。
+\end{enumerate}
+
+输出按行优先，每个连接器一行 6 个整数：\code{row col up down left right}，其中四个方向位是 0/1。题面给了三组样例：5×6 有一解；把第一组第 3 行改成 \code{2 2 1 0 0 1} 之后变成无解；3×5 的一组有两个解——这说明答案不唯一，任意合法解都算对。
+
+本题 PR 阶段 20 分，构成是 Programming 10、Testing 3、Analysis 3、Documentation 4。本文档对应后 10 分（测试、分析、文档），代码在 \code{code/} 里。
+
+\subsection{背景：这个问题难在哪}
+
+先把三件事分清楚，后面选算法才不会走错路。
+
+\textbf{第一，度数约束本身不难。}把每个连接器看成一个点，把“同行或同列相邻的两个连接器”看成一 条候选边（下一节说明为什么只需相邻），那么“每个点恰好接 $k$ 条边”就是在这个图上找一个满足指定度数的子图。如果所有格子都是连接器、且 $k$ 全为 1，这就是“网格图上是否存在完美匹配”，多项式可解；更一般的 $k$ 对应 $f$-factor，Tutte 的 $f$-factor 定理给出多项式判定，也可以化成 $b$-matching 用网络流求。
+
+\textbf{第二，让问题变难的是交叉约束。}一条横栅栏会压住它中间经过的每个空格，一条竖栅栏也一样，而同一个空格里横竖不能同时存在。这等于给“选哪些边”加了一批互斥对：横边与压在同一空格上的竖边最多选一条。每个空格最多只被一条横边和一条竖边压住，所以互斥关系是一个匹配（matching）——但“带互斥对的 $f$-factor”没有现成的多项式算法，它是约束满足问题，最坏情况只能指数搜索。
+
+\textbf{第三，样例的规模很小，但输入空间很大。} $n,m\le 50$ 意味着最多 2500 个格子、约 5000 条候选边。要在 10 分的编程题里拿到分，光“能跑样例”不够：样例 1 的搜索树只走了一个结点，随便写个回溯都能过；真正决定分数的是那些把搜索树撑到几十万结点的输入（第 3 章有一整节专测）。
+
+\subsection{我们想回答的问题}
+
+\begin{enumerate}[itemsep=2pt,topsep=2pt]
+  \item 传播（propagation）能砍掉多少搜索？值不值得为它多写一百多行代码？
+  \item 分支点怎么挑？四种常见策略在同一批数据上差多少，有没有一种稳赢？
+  \item 50×50 的规模上限在哪——什么形状的输入最难，难到什么程度？
+  \item 为什么随机生成的度数表几乎不用搜索就能判出无解？
+\end{enumerate}
+
+%=====================================================================
+\section{Data Structure / Algorithm Specification}
+
+\subsection{从棋盘到图：建模}
+
+\textbf{点。}每个连接器是一个点，按行优先编号（这个编号顺序正好就是输出顺序，省掉一次排序）。
+
+\textbf{边。}同一行（或同一列）里\emph{相邻}的两个连接器之间，可以放一段栅栏，这就是一条候选边。为什么不连“隔着第三个连接器的两个点”？因为栅栏是直线，若它从 A 出发穿过中间的连接器 B 再到 C，那 B 也落在栅栏上，B 的度数算不算这条线就成了歧义；题面要求栅栏“两端是连接器”，所以一条栅栏的两端之间不允许再有连接器。这条限制把候选边的数量压到 $O(nm)$：每个点最多四个邻居（上下左右各一个），候选边最多 $2nm$。
+
+\textbf{冲突。}一条横边会压住它中间经过的每个空格，一条竖边同理。同一个空格里如果同时有横边和竖边，就是题面禁止的交叉。所以冲突只发生在“压住同一个空格的横边与竖边”之间。因为每个空格最多被一条横边和一条竖边压住（边界上的空格更少），冲突图是若干个互不相连的二元组，这一点在第 2.3 节会被用来把检查做成 $O(1)$。
+
+\textbf{形式的说法。}给定无向图 $G=(V,E)$（$V$ 是连接器，$E$ 是候选边）和度数向量 $k$，求 $S\subseteq E$，使得
+\[
+  \forall v\in V:\ |S\cap \delta(v)| = k(v),
+  \qquad
+  \forall (e_1,e_2)\in C:\ \lnot\bigl(e_1\in S \wedge e_2\in S\bigr),
+\]
+其中 $C$ 是冲突对集合。第一组约束是度数等式，第二组是互斥。
+
+\subsection{数据结构}
+
+表 \ref{tab:struct} 列了求解器用到的全部数组。这里只说三个设计决定。
+
+\begin{table}[htbp]
+\centering
+\caption{求解器的核心数组（$V$ 为连接器数，$E$ 为候选边数）}
+\label{tab:struct}
+\small
+\begin{tabular}{lll}
+\toprule
+\rowcolor{gray!12}名字 & 规模 & 作用 \\
+\midrule
+\code{cid\_} & $nm$ & 格子 $\to$ 连接器编号，$-1$ 表示空格 \\
+\code{cellOf\_} & $V$ & 连接器 $\to$ 格子编号（输出时反查坐标） \\
+\code{edges\_} & $E$ & 每条候选边的两个端点和两个端点坐标 \\
+\code{inc\_} & $2E$ & 连接器 $\to$ 关联的候选边（最多 4 条） \\
+\code{hEdge\_}, \code{vEdge\_} & $nm$ & 空格 $\to$ 压住它的横/竖候选边，$-1$ 表示没有 \\
+\code{st\_} & $E$ & 每条边三态：0 未定 / 1 选中 / 2 弃用 \\
+\code{need\_} & $V$ & 这个点还差几条边 \\
+\code{freeCnt\_} & $V$ & 这个点还有几条未定的关联边 \\
+\code{trail\_} & 变长 & 改动日志，每条记录 \{\,何种量, 下标, 旧值\,\} \\
+\code{queue\_}, \code{inQueue\_} & $V$ & 传播队列与去重标记 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{决定一：冲突用“格子 $\to$ 边”反查，而不是枚举边对。}选一条横边时，要知道它压住的每个空格上有没有竖边。若拿边表两两比较，$E=5000$ 时一次检查是 $10^7$ 量级；用 \code{hEdge\_}/\code{vEdge\_} 反查，每个空格一次数组访问，整条边走完就是它的长度。这条反查表在报告里只占两行代码，但它把“检查交叉”从搜索的热点里挪走了。
+
+\textbf{决定二：状态用“改动日志”回滚，不整份拷贝。}一个搜索结点要能退回分支前的状态。最直接的做法是进分支前把 \code{st\_}/\code{need\_}/\code{freeCnt\_} 整份拷一份，$V+E$ 约 6000 个字段、每个 1--4 字节，一次拷贝几万字节；几十万结点就是几十 GB 的搬运，光 \code{memcpy} 就能吃掉全部时间预算。改成只记“哪个量被改成了什么”，一次传播通常只有几十条记录，回滚代价与“改了多少”成正比，与问题规模无关（表 \ref{tab:struct} 里的 \code{trail\_}）。代价是回滚必须严格倒序，所以所有写状态的代码都只走 \code{selectEdge}/\code{banEdge}/\code{addNeed}/\code{subFree} 四个入口，别处不许直写。
+
+\textbf{决定三：传播用队列，不用“扫到不动点”。}一条边被选中会让两端的需求各减一，可能连锁触发邻居的推断；用队列按“谁被改了就把谁排进去”推进，每个点在一次传播里最多处理常数次（它的四条边被定死时各触发一次），比每轮全表扫一遍便宜。
+
+\subsection{三条传播规则}
+
+任何时刻，对每个连接器 $v$ 都有两个数：\code{need}[$v$]（还差几条）和 \code{free}[$v$]（还有几条未定边）。三条规则都是“必然的推断”，不是启发式：
+
+\begin{lstlisting}
+propagate():                       -- 反复推进直到不动点
+    while queue is not empty:
+        v = pop()
+        if need[v] < 0 or need[v] > free[v]: return FALSE
+        if need[v] == 0:      ban  every undecided edge of v
+        if need[v] == free[v]: select every undecided edge of v
+    return TRUE
+\end{lstlisting}
+
+$need>free$ 说明剩下的边全选也不够，这一支必死；$need=0$ 说明已经够了，未定的边一条都不能再选；$need=free$ 说明剩下的边一条都不能少。三条都是“合法解必须满足”的条件，所以剪掉的分支里不可能有解——这一点在第 2.5 节证明。
+
+选边本身也有两条后果，写成一个函数：
+
+\begin{lstlisting}
+select(e):                         -- 选中一条边；FALSE 表示立刻矛盾
+    if state[e] == SELECTED: return TRUE      -- 幂等
+    if state[e] == BANNED:   return FALSE
+    state[e] = SELECTED; need[u]--; need[v]--; free[u]--; free[v]--
+    push u, push v                            -- 两端都要重新检查
+    for each cell x strictly between the two endpoints:
+        o = the perpendicular edge covering x  -- 由 hEdge/vEdge 直接查到
+        if o exists:
+            if state[o] == SELECTED: return FALSE   -- 已经交叉了
+            ban(o)
+    return TRUE
+\end{lstlisting}
+
+\code{ban} 与 \code{select} 对称：置状态、两端 \code{free} 减一、把两端排进队列。
+
+\textbf{用样例 3 走一遍。}输入是 3 行 5 列：
+
+\begin{lstlisting}
+1 1 2 0 1
+1 0 3 0 2
+1 2 1 0 1
+\end{lstlisting}
+
+右下角 (2,5)（1 基）的 $k=2$，它的候选边只有“上”和“下”两条——同一列里相邻的连接器只有 (1,5) 和 (3,5)。于是 \code{free}=2、\code{need}=2，规则三把两条边都定死；这两条边一选，(1,5) 和 (3,5) 各消耗一个度，它们可能又满足“剩下的边一条都不能少”，继续往下推。整张图推完，只剩下两三个自由度，这时才进回溯。实测这张 3×5 的图 \code{dfs} 只走了 2 个结点就出了解（第 3 章样例一节）。
+
+\subsection{分支与回溯}
+
+传播停下来时，若还有 \code{need}>0 的点，就说明有自由度，需要枚举。分支点的挑法是一个启发式：
+
+\begin{lstlisting}
+choose_vertex():                   -- 返回 -1 表示所有 need 都是 0，已经成功
+    among v with need[v] > 0:
+        pick the one minimizing (free[v] - need[v])   -- 最“被逼死”的点
+        tie-break: minimizing free[v]                 -- 再挑边少的
+\end{lstlisting}
+
+这就是 CSP 里常说的 MRV（minimum remaining values）：先处理最没有余地的点，失败得早，剪枝早。分支宽度最多 4（一个点最多四条边），枚举“选其中 \code{need} 条”的全部组合，最多 $C(4,2)=6$ 种。
+
+\begin{lstlisting}
+dfs():
+    nodes++
+    if propagation is on and not propagate(): return FALSE
+    v = choose_vertex()
+    if v < 0: return TRUE                       -- 所有 need 归零，方案成立
+    cand = undecided edges of v
+    mark = trail.size()
+    for each subset S of cand with |S| == need[v]:
+        ok = TRUE
+        for e in S:               ok = ok and select(e)
+        for e in cand \ S:        ok = ok and ban(e)
+        if ok and dfs(): return TRUE
+        undo(mark)                              -- 这一组失败，整层退回
+    return FALSE
+\end{lstlisting}
+
+\code{undo(mark)} 把 \code{trail\_} 弹到长度 \code{mark}，倒序还原；同时清空传播队列（队列里的点属于被撤销的那一层，状态已经回去了，不能再按它们检查）。
+
+\subsection{正确性}
+
+\textbf{引理 1（传播保解）}三条规则剪掉的分支里没有合法解。
+
+\emph{证明。}设当前部分赋值 $S$ 是某个合法解 $S^\ast$ 的子集。(a) 若 \code{need}[$v$]$>$\code{free}[$v$]，则 $v$ 的未定边全选也不足 $k(v)$，与 $S^\ast$ 存在矛盾；(b) 若 \code{need}[$v$]$=0$，则 $S^\ast$ 不能再含 $v$ 的任何未定边，否则度数超 $k(v)$；(c) 若 \code{need}[$v$]$=$\code{free}[$v$]，则 $S^\ast$ 必须含 $v$ 的全部未定边，否则凑不满。\code{select} 里弃掉对向边同理：同一空格里横竖不能共存，$S^\ast$ 若含这条横边就必不含那条竖边。\hfill$\square$
+
+\textbf{引理 2（分支完备）}分支点 $v$ 处，任何合法解在 $v$ 的未定边里选中的条数必然恰好等于 \code{need}[$v$]，所以它对应枚举中的某一个子集 $S$。
+
+\emph{证明。}合法解要满足 $v$ 的度数等式；已选中的边贡献了 $k(v)-$\code{need}[$v$] 条，还差 \code{need}[$v$] 条，只能从未定边里取。\hfill$\square$
+
+\textbf{定理}算法返回 TRUE 时输出的方案合法；返回 FALSE 时问题无解。
+
+\emph{证明。}返回 TRUE 时，每个 \code{select} 都检查了度数不超 $k$ 与不交叉，结束时所有 \code{need} 为 0（否则 \code{choose\_vertex} 会返回一个点继续分支），度数与交叉两条约束都满足。返回 FALSE 时，根结点的所有分支都被试过：每一层按引理 2 覆盖了全部可能，每个失败的分支按引理 1 不含解，故无解。\hfill$\square$
+
+\textbf{终止性}分支前传播已推到不动点，此时对分支点有 $0<$\code{need}$<$\code{free}，所以“选 \code{need} 条”与“弃掉其余”两边都非空，每层至少把一条边从“未定”变成定值；边数有限，深度不超过 $E$，搜索树有限。
+
+\subsection{为什么不用别的做法}
+
+\textbf{裸回溯}（不传播）：正确但慢得离谱。第 3.7 节有对照：30×30 的同一组数据，开传播 26 个结点，关掉传播 259063 个结点，差了四个数量级。
+
+\textbf{化成 SAT/ILP 交给现成求解器}：可行，但课程要求自己实现，而且本题规模（5000 个布尔变量、几千条子句）用通用求解器反而更重；我们的传播规则本质上是单位传播（unit propagation）的特化版本，把“度数恰好”这类基数约束直接编进数据结构，省掉了转 CNF 的开销。
+
+\textbf{网络流 / $b$-matching}：能处理度数约束，但处理不了交叉互斥——互斥把问题从“流”变成了“带冲突的选边”，没有现成的多项式算法（见 1.2）。这也是本题值得写一章的原因。
+
+%=====================================================================
+\section{Testing}
+
+\subsection{环境与口径}
+
+所有时间都在同一台机器上测：Windows 11、g++ 16.2.0（MinGW-W64，UCRT）、\code{-O2 -std=c++17}、CMake 4.4.3 + Ninja 1.13.2、Python 3.13.12（测试脚本）。计时用 \code{std::chrono::steady\_clock}，只包住 \code{solve()}：读入与输出不算，否则 2500 个连接器的 \code{printf} 会把表冲得没法看。每组数据跑三次取最快的一次，单次上限 10 秒，超时的单独记，不混进中位数。秒数只在本文这批数据内可比，换机器或换优化级别都要重测。
+
+测试分五层，从便宜到贵：题面样例（3 组）→ 边界用例（7 组，手写）→ 与暴力对拍（400 组随机小数据）→ 规模与策略实验（几百组 10×10 到 50×50）→ 最坏情况（高密度与不可解）。
+
+\subsection{题面样例}
+
+三组样例的输入输出都按题面原文存进 \code{code/samples/}，跑出来的结果与题面给的参考解\emph{逐行相同}（用 \code{Compare-Object} 比较，差异行数 0）。样例 3 有两个解，我们给出的正好是题面列出的那一个。第二组输出 \code{No Solution}，与题面一致。
+
+需要说明的是，“逐行相同”不是判题要求——多解时任意合法解都对——它只是说明搜索顺序恰好与出题人一致（分支启发式第一次命中的就是那条解）。
+
+\subsection{边界用例}
+
+手写 7 组，覆盖“空棋盘、单点、一对、奇总度、唯一交叉、十字、50×50 全空”这些角落。判定由 \code{code/tools/check.py} 完成：它按题面规则独立校验答案（每个连接器一行、方向位 0/1、度数等于 $k$、沿方向走到第一个非空格必须是连接器、对向必须互相声明、横竖不得交叉），而不是拿程序输出跟自己比。
+
+\begin{table}[htbp]
+\centering
+\caption{边界用例：输入、期望、实际}
+\small
+\begin{tabular}{lllll}
+\toprule
+\rowcolor{gray!12}用例 & 规模 & 要点 & 期望 & 实际 \\
+\midrule
+\code{edge1-empty} & 3×3 & 全 0，没有连接器 & 输出为空 & 空 \checkmark \\
+\code{edge2-single} & 2×2 & 只有一个 $k=1$ 的点 & \code{No Solution} & \code{No Solution} \checkmark \\
+\code{edge3-pair} & 2×3 & 一行两个 $k=1$ 的点 & 一条横线 & 合法 \checkmark \\
+\code{edge4-odd} & 2×3 & 三个 $k=1$，总度数为奇 & \code{No Solution} & \code{No Solution} \checkmark \\
+\code{edge5-cross} & 3×3 & 上下左右各一个 $k=1$，只能交叉 & \code{No Solution} & \code{No Solution} \checkmark \\
+\code{edge6-plus} & 3×3 & 中心 $k=4$，四向各一个 $k=1$ & 十字 & 合法 \checkmark \\
+\code{edge7-zero50} & 50×50 & 全 0，压规模 & 输出为空 & 空 \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+7 组全过。其中 \code{edge5} 是关键的一组：四条候选边两两不冲突的部分不存在，唯一的铺法会让两条线在中心交叉，程序必须判无解而不是硬凑一个。
+
+\subsection{与暴力对拍}
+
+\textbf{口径。}另写一个暴力求解器 \code{code/tools/brute.py}（不复用求解器任何代码）：枚举每条候选边选/不选，带“某点剩余可选边不够 $k$”的剪枝。随机数据分两类：\code{layout}（先随机铺互不相交的栅栏，再由端点算度数，保证有解）和 \code{random}（每格独立随机 $k$，绝大多数无解）。小规模（3×3 到 6×6）以暴力的结论为标准答案：暴力说无解，程序必须输出 \code{No Solution}；暴力说 有解，程序必须给出一个通过 \code{check.py} 的合法解。另外每组再跑 20 个 20×20 与 50×50 的 \code{layout} 大构造（必可解），只验解的合法性。
+
+\textbf{结果。}400 组抽查（暴力有解 200、无解 200）：0 处不符；20 组大构造：0 处不符。更早的 120、150、200 组轮次也都是 0。
+
+\subsection{规模实验}
+
+固定分支策略（$h_0$），在 $10\times10$ 到 $50\times50$ 的方阵上各跑 12 个种子，密度（非零格子的比例）取 0.15/0.25/0.35。表 \ref{tab:scale} 是中位数与最大值。
+
+\begin{table}[htbp]
+\centering
+\caption{规模实验：\code{layout} 输入，12 个种子（时间单位 ms）}
+\label{tab:scale}
+\small
+\begin{tabular}{rrrrrrr}
+\toprule
+\rowcolor{gray!12}边长 & 密度 & 结点中位 & 结点最大 & 时间中位 & 时间最大 & 超时 \\
+\midrule
+10 & 0.15 & 1 & 1 & 0.00 & 0.00 & 0 \\
+10 & 0.25 & 2 & 3 & 0.00 & 0.01 & 0 \\
+10 & 0.35 & 2 & 9 & 0.01 & 0.01 & 0 \\
+20 & 0.15 & 1 & 3 & 0.01 & 0.01 & 0 \\
+20 & 0.25 & 2 & 10 & 0.01 & 0.01 & 0 \\
+20 & 0.35 & 8 & 29 & 0.01 & 0.03 & 0 \\
+30 & 0.15 & 2 & 12 & 0.01 & 0.01 & 0 \\
+30 & 0.25 & 7 & 19 & 0.01 & 0.03 & 0 \\
+30 & 0.35 & 26 & 133 & 0.03 & 0.09 & 0 \\
+40 & 0.15 & 2 & 9 & 0.01 & 0.02 & 0 \\
+40 & 0.25 & 16 & 110 & 0.03 & 0.09 & 0 \\
+40 & 0.35 & 120 & 2374 & 0.11 & 1.45 & 0 \\
+50 & 0.15 & 4 & 20 & 0.02 & 0.03 & 0 \\
+50 & 0.25 & 68 & 149 & 0.08 & 0.15 & 0 \\
+50 & 0.35 & 772 & 159984 & 0.69 & 67.81 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+三件事值得读出来。第一，中位数一直在毫秒以下，说明\emph{大多数}输入传播一遍就推完了（结点数 1 到 26）。第二，最大值与中位数差三个数量级：50×50 密度 0.35 那一行，中位 0.69 ms，最坏 67.81 ms、结点 159984——同一条命令，换一个种子，时间差一百倍。第三，增长主要来自规模与密度两个方向叠加：10×10 无论密度都是 0.01 ms 以下，50×50 密度 0.35 才第一次出现秒级以下的“长尾”。
+
+\subsection{分支策略对比}
+
+四种策略（$h_0$ 自由度减需求最小、$h_1$ 行优先第一个、$h_2$ 需求最大、$h_3$ 未定边最多）在同一批 12 组数据上比结点数（表 \ref{tab:heur}）。选择“结点数”而不是“秒数”作主指标，是因为它不受机器负载影响，换台机器还是这个数。
+
+\begin{table}[htbp]
+\centering
+\caption{分支策略：结点数（ms 为中位数，各跑三次取最快）}
+\label{tab:heur}
+\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+\rowcolor{gray!12}数据 & $h_0$ & $h_1$ & $h_2$ & $h_3$ & $h_0$ ms & $h_2$ ms & $h_3$ ms \\
+\midrule
+30×30 d0.35 \#0 & 2 & 2 & 7 & 2 & 0.02 & 0.02 & 0.02 \\
+30×30 d0.35 \#1 & 26 & 26 & 998 & 30 & 0.03 & 0.22 & 0.04 \\
+30×30 d0.35 \#2 & 23 & 23 & 28 & 19 & 0.03 & 0.04 & 0.04 \\
+30×30 d0.35 \#3 & 16 & 16 & 21 & 12 & 0.02 & 0.03 & 0.03 \\
+30×30 d0.35 \#4 & 25 & 25 & 33 & 23 & 0.03 & 0.04 & 0.03 \\
+30×30 d0.35 \#5 & 11 & 11 & 8 & 23 & 0.02 & 0.02 & 0.04 \\
+30×30 d0.35 \#6 & 16 & 16 & 41 & 13 & 0.03 & 0.04 & 0.03 \\
+30×30 d0.35 \#7 & 49 & 49 & 19 & 29 & 0.04 & 0.03 & 0.05 \\
+50×50 d0.40 \#0 & 28409 & 28409 & 87 & 381030 & 11.02 & 0.10 & 175.35 \\
+50×50 d0.40 \#1 & 5896 & 5896 & 438 & 229639 & 3.79 & 0.31 & 160.41 \\
+50×50 d0.40 \#2 & 72611 & 72611 & 超时 & 5891 & 29.44 & 超时 & 3.97 \\
+50×50 d0.40 \#3 & 102490 & 102490 & 930 & 234 & 49.06 & 0.91 & 0.30 \\
+\midrule
+合计结点 & 209574 & 209574 & 2610 & 616945 & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+结论有三条，都不太好听：
+
+\begin{enumerate}[itemsep=2pt,topsep=2pt]
+  \item 小规模上四种策略几乎一样（30×30 全部在 100 结点以内）。差别只在大实例上出现。
+  \item $h_2$（需求最大）在 50×50 上总体最好：合计结点 2610，是 $h_0$ 的 1/80；四组里三组快 30 到 100 倍。但它在 \#2 上直接超时，而 $h_0$ 那组只要 29 ms——单一策略没有稳赢。
+  \item $h_3$（未定边最多）最不稳：既能 0.30 ms 解决 \#3，也能在 \#0 上烧掉 175 ms、38 万结点。
+\end{enumerate}
+
+所以默认值仍取 $h_0$：它不是最快的，但它在这 12 组里没有一次爆掉，最坏值最小。想要更快，正确做法不是换一个更好的策略，而是“几个策略轮流试、谁先出解算谁”（第 4.5 节）。
+
+\subsection{传播值多少}
+
+把传播关掉（保留选边时的逐边检查），其余不变，同一批数据再跑一遍（表 \ref{tab:prop}）。
+
+\begin{table}[htbp]
+\centering
+\caption{传播开/关对照（$h_0$，超时上限 10 s）}
+\label{tab:prop}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\rowcolor{gray!12}数据 & 开：结点 & 开：ms & 关：结点 & 关：ms \\
+\midrule
+30×30 d0.35 \#0 & 2 & 0.02 & 102 & 0.03 \\
+30×30 d0.35 \#1 & 26 & 0.03 & 259063 & 35.20 \\
+30×30 d0.35 \#2 & 23 & 0.03 & 47580 & 7.81 \\
+30×30 d0.35 \#3 & 16 & 0.02 & 904 & 0.15 \\
+50×50 d0.40 \#0 & 28409 & 10.29 & 超时 & 超时 \\
+50×50 d0.40 \#1 & 5896 & 3.80 & 超时 & 超时 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+最极端的一组是 30×30 \#1：26 个结点对 259063 个结点，差四个数量级；两组 50×50 在关掉传播后 10 秒都跑不完。这一节回答第 1.3 节的第一个问题：传播那一百多行代码，买到的是“能不能在时限内跑完”，不是常数优化。
+
+\subsection{最坏情况}
+
+\textbf{随机 50×50。}40 组随机密度（0.2/0.3/0.4/0.5）的 \code{layout} 输入：全部有解、无超时，中位 0.19 ms，最坏 699.61 ms（$d=0.50$ 的第 29 个种子，1138066 个结点、66079435 次传播）。这一个种子就占了 40 组总时间的绝大部分。
+
+\textbf{高密度。}密度再往上走（0.55、0.60），坑位互相牵连，传播推不动，搜索树开始指数爆炸（表 \ref{tab:hard}）。
+
+\begin{table}[htbp]
+\centering
+\caption{高密度 50×50：每组 8 个种子、单次上限 10 s}
+\label{tab:hard}
+\small
+\begin{tabular}{rrrrrr}
+\toprule
+\rowcolor{gray!12}密度 & 跑完/总数 & 中位 ms & 最大 ms & 最大结点 & 超时 \\
+\midrule
+0.55 & 8/8 & 474.4 & 4438.3 & 11561381 & 0 \\
+0.60 & 5/8 & 1.3 & 213.4 & 389751 & 3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+0.55 那一行没有超时，但最大一组走了 1156 万结点、4.4 秒；0.60 有 3 组 10 秒没跑完，而跑完的 5 组里中位数只有 1.3 ms——不是“密度越高越慢”这么简单，而是“高密度里有一小撮输入会把搜索树撑爆”。
+
+\textbf{不可解实例。}50×50 每格以概率 $p$ 独立给一个随机 $k$（$p=0.5/0.7/0.9$，各 15 组），结果全部判为无解、全部在 0 个结点内返回、时间 0.00 ms。原因不神秘：随机给的 $k$ 与邻居数对不上（比如角上给 $k=4$），\code{need>free} 在根结点就成立，或者总度数是奇数，两条预检直接拦下（第 4.3 节展开）。这也说明“随机对拍”里 \code{random} 那一路其实很少真正考验搜索。
+
+\subsection{测试过程中修掉的问题}
+
+测试不只是“跑一遍看对不对”。表 \ref{tab:bugs} 是这轮里真正抓到的三个问题，前两个在校验/生成工具里，第三个在求解器里。
+
+\begin{table}[htbp]
+\centering
+\caption{测试中发现的三个问题（目的 / 期望 / 实际 / 可能原因 / 状态）}
+\label{tab:bugs}
+\small
+\begin{tabular}{p{2.6cm}p{2.4cm}p{3.0cm}p{4.6cm}p{1.4cm}}
+\toprule
+\rowcolor{gray!12}目的 & 期望 & 实际 & 可能原因 & 状态 \\
+\midrule
+校验“对向边也要声明” & 合法解全部通过 & 300 组里 104 组被误判为非法 & \code{check.py} 用 \code{in} 比较\emph{值}而不是下标，下标 2/3 的反向永远不命中 & 已修 \\
+\hline
+生成“必有解”的 \code{layout} 实例 & 生成器造出的实例一定有解 & 50×50 里 12/20 报无解 & 生成器只查 \code{owner==EMPTY}，而连接器格的 owner 也是 EMPTY，栅栏会从连接器身上穿过去 & 已修 \\
+\hline
+对比四种分支策略 & 四种都给同一个解 & $h_2$/$h_3$ 输出全 0、根结点即返回成功 & 两种“越大越好”的策略误用了降序变量 \code{bestSlack}（初值 $10^9$），条件永假，\code{chooseVertex} 返回 $-1$ & 已修 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+三个问题的共同点是：\emph{都是“工具说错了”而不是“程序算错了”}，而且都只有在“换一批数据”或“换一个策略”时才暴露。第二个尤其值得记：生成器与校验器如果共享同一个错误假设，对拍会一致地给出错误结论；所以 \code{layout} 的“必有解”是由构造方法保证的（先铺线再算度数），不是由生成器自己声称的。
+
+修完之后重跑：400 组对拍 0 差异、7 组边界全过、四种策略在 120 组小数据上答案一致。
+
+%=====================================================================
+\section{Analysis and Discussion}
+
+\subsection{时间与空间复杂度}
+
+\textbf{建图} $O(nm+E)$：扫一遍格子认出连接器，再对每行每列扫一遍连相邻对，边表与反查表各填一次。
+
+\textbf{一次传播}：队列里每个点被处理常数次（它的每条边被定死时触发一次，最多 4 次），每次处理看它不超过 4 条关联边，所以一次传播是 $O(V)$ 量级；但 \code{select} 走一遍边的跨度，跨度的总和受限于“每条边覆盖的空格数”，最坏 $O(nm)$。
+
+\textbf{搜索}：设搜索树有 $T$ 个结点，每个结点要做一次传播加一次分支点选取，总时间 $O(T\cdot(V+\text{跨度}))$；$T$ 最坏是指数的（1.2 节已说明这是带互斥的 $f$-factor，没有已知多项式算法）。实测 $T$ 的分布极不均匀：多数输入 $T\le 30$，最坏的 50×50 高密度输入 $T$ 到 $10^7$。
+
+\textbf{空间} $O(nm+E)$：所有数组都是问题规模的线性函数，没有递归栈之外的动态分配——回溯是手写栈，不是系统递归（\code{dfs} 递归深度不超过 $E$，5000 层，每层几十字节，也是在 KB 量级）。50×50 的最坏情况实测常驻内存不到 10 MB。
+
+\subsection{传播为什么这么有效}
+
+表 \ref{tab:prop} 的数字可以解释成一句话：\emph{这道题的约束是“局部紧”的}。一个连接器的度数只有 1 到 4，而它的邻居最多四个，所以“剩下的边够不够”这个判断在它身上几乎总是立刻出结论；一旦某条边被定死，它两端的自由度各减一，很可能立刻满足 $need=0$ 或 $need=free$，连锁反应一路推下去。样例 3 是极端例子：8 个连接器，传播一步没分支就全定了。
+
+反过来说，传播推不动的地方就是难的地方：需要“同时”决定一批互相牵连的边，任何单点推断都下不了结论。50×50 密度 0.6 的那批输入正是这样——大量 $k=3,4$ 的点彼此相邻，每条边的选择都同时影响两端的余量，传播停在“每个点都还有 2 到 3 种可能”，只能靠搜索。
+
+\subsection{为什么随机无解实例秒出}
+
+随机给 $k$ 的输入几乎必然违反两条必要条件：(a) 某点的 $k$ 大于它的邻居数（角上最多 2 个邻居，边上 3 个，内部 4 个）；(b) 总度数是奇数。50×50 时内部点占九成以上，随机 $k\in\{1..4\}$ 里 $k=4$ 的点只要有一个邻居是空格就立刻违反 (a)；即使侥幸通过，总度数的奇偶也有一半概率不对。实测 $p=0.5$ 时 15 组全在根结点返回，就是这个原因。
+
+这也解释了为什么 \code{stress} 里 \code{random} 那一路虽然数量占一半，却很少真正压到搜索：它们几乎都在预检或第一层传播就死了。真正考验搜索的是 \code{layout} 造的“有解但紧”的实例。
+
+\subsection{与理论算法的对照}
+
+\begin{table}[htbp]
+\centering
+\caption{几种做法在本题上的可行性}
+\small
+\begin{tabular}{p{3.2cm}p{4.4cm}p{6.4cm}}
+\toprule
+\rowcolor{gray!12}做法 & 复杂度 & 在本题上的问题 \\
+\midrule
+完美匹配（$k\equiv1$、全格连接器） & 多项式（开花算法） & 只覆盖 $k=1$ 且无空格的特例 \\
+$f$-factor / $b$-matching & 多项式 & 处理不了交叉互斥 \\
+SAT / ILP & 最坏指数，工程上很强 & 要转成 CNF/线性约束，5000 变量规模下反而不如定制传播轻 \\
+传播 + 回溯（本文） & 最坏指数，实测多数毫秒级 & 高密度输入有指数尾巴（表 \ref{tab:hard}） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+这张表想说清楚一件事：本题的难度不在“度数约束”（那是多项式可解的），而在“度数约束 + 几何互斥”这个组合。把已有的多项式算法套上来，缺的正是互斥那一条；把通用 SAT 求解器套上来，多的正是“转格式 + 通用性”的开销。定制传播 + 回溯是这两者之间的折中。
+
+\subsection{可以怎么改进}
+
+\begin{enumerate}[itemsep=2pt,topsep=2pt]
+  \item \textbf{策略组合而不是单选。}表 \ref{tab:heur} 显示 $h_2$ 总体最好但会爆，$h_0$ 稳但慢。做法是给每个结点设一个结点预算，超了就换下一个策略重来（重启），或者按数据特征（密度、$k=4$ 的比例）选初始策略。改动很小，能把最坏情况从“超时”压到“几个策略里最好的那个”。
+  \item \textbf{学习失败原因。}现在失败只回滚，不记“为什么失败”。经典 CDCL 的做法是记下导致冲突的那组赋值，回溯时直接跳过多层（non-chronological backtracking）。本题的冲突几乎都来自“某点度数凑不齐”，可以记成“这组边里最多选 $j$ 条”的基数约束，下次直接剪。
+  \item \textbf{预处理收缩。}$k$ 等于 0/1 或邻居数的点可以先定死（传播已经做了大部分）；对“一条链上全是 $k=2$ 的点”这类结构，可以整段决定，不必逐点分支。
+  \item \textbf{位并行。}状态是 0/1/2 三态，可以用两个 bit 存一条边，一次处理 32 条；本题 $E\le5000$，位并行能把每个结点的常数再压一个数量级，但不改变指数尾部。
+\end{enumerate}
+
+\subsection{结论}
+
+\begin{enumerate}[itemsep=2pt,topsep=2pt]
+  \item 把棋盘化成“连接器 + 相邻候选边 + 交叉互斥”之后，传播三条规则加 MRV 分支能在毫秒级解决 50×50 的多数实例；三组题面样例逐行一致，400 组随机对拍与 7 组边界全过。
+  \item 传播是这道题的胜负手：关掉它，30×30 的结点数从 26 涨到 259063，50×50 两组直接超时。
+  \item 分支策略没有稳赢：$h_2$ 在 50×50 上总体快 80 倍却会单组超时，默认仍取最稳的 $h_0$；想要更稳应当做策略组合（重启），而不是找一个“更好的”单策略。
+  \item 难度集中在高密度输入：密度 0.55 时最大 4.4 秒、1156 万结点，0.60 时有 3/8 超时。这是本题真正的规模上限，也是 10 分编程部分唯一可能丢分的地方。
+\end{enumerate}
+
+\textbf{局限。}第一，时间数字是单机单批次的，只作批内比较。第二，测试数据全是我们自己生成的（\code{layout} 与 \code{random} 两种），没有官方隐藏测试，真实评测里的数据分布可能不同。第三，最坏情况只测到 50×50；题目规模上限就是 50×50，但如果允许更大，指数尾部会更早出现。第四，没有做“策略组合”的对照实验，4.5 节第 1 条只是根据表 \ref{tab:heur} 的推断，不是实测结论。
+
+\section*{References}
+\addcontentsline{toc}{section}{参考文献}
+\small
+\begin{enumerate}[label={[\arabic*]},itemsep=0pt,topsep=2pt]
+  \item T. H. Cormen, C. E. Leiserson, R. L. Rivest, C. Stein, ``Introduction to Algorithms'', MIT Press, 3rd edition, (2009)
+  \item W. T. Tutte, ``A short proof of the factor theorem for finite graphs'', Canadian Journal of Mathematics, 6:347--352, (1954)
+  \item J. Edmonds, ``Paths, trees, and flowers'', Canadian Journal of Mathematics, 17:449--467, (1965)
+  \item A. Biere, M. Heule, H. van Maaren, T. Walsh (eds.), ``Handbook of Satisfiability'', IOS Press, 2nd edition, (2021)
+  \item R. Dechter, ``Constraint Processing'', Morgan Kaufmann, (2003)
+  \item S. Russell, P. Norvig, ``Artificial Intelligence: A Modern Approach'', Pearson, 4th edition, (2020)
+\end{enumerate}
+
+\clearpage
+\section*{Author List}
+
+\vspace{0.2em}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\rowcolor{gray!12}成员 & 负责的内容 \\
+\midrule
+成员 A & 建模、传播与回溯求解器、命令行与输出 \\
+成员 B & 暴力对拍程序、随机数据生成器、结果校验器 \\
+成员 C & 规模与策略实验、报告撰写与版式、提交包整理 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{1.6em}
+
+\section*{Declaration}
+
+\noindent
+We hereby declare that all the work done in this project titled ``Recover the Design: Solving Degree-Constrained Fence Layouts by Propagation and Backtracking'' is of our independent effort as a group.
+
+\vspace{2.0em}
+\section*{Signatures}
+
+\clearpage
+\appendix
+\renewcommand{\thesection}{Appendix \Alph{section}}
+\section{Source Code}
+
+源码在提交包的 \code{code/src/} 下，三个文件、共 604 行，其中纯注释 200 行。按课程要求统计的注释率见表 \ref{tab:ratio}（口径：纯注释行 = 只含注释的行；宽口径 = 纯注释行加行尾注释行；分母为文件总行数）。
+
+\begin{table}[htbp]
+\centering
+\caption{源码注释率（\code{python code/tools/stats.py} 统计）}
+\label{tab:ratio}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+\rowcolor{gray!12}文件 & 总行 & 纯注释 & 行尾注释 & 纯注释率 & 宽口径 \\
+\midrule
+\code{main.cpp}     & 102 & 31 & 1  & 30.4\% & 31.4\% \\
+\code{solver.cpp}   & 380 & 116 & 9 & 30.5\% & 32.9\% \\
+\code{solver.h}     & 122 & 53 & 30 & 43.4\% & 68.0\% \\
+\midrule
+合计                & 604 & 200 & 40 & 33.1\% & 39.7\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+三个文件都过 30\% 的线；按“纯注释行 / 代码行”算则是 58.1\%。下面按“看代码的顺序”排：先看头文件的接口与不变量，再看求解器实现，最后看主程序的输入输出。
+
+\subsection*{A.1 \code{solver.h}}
+\lstinputlisting[style=cppsrc]{../code/src/solver.h}
+
+\subsection*{A.2 \code{solver.cpp}}
+\lstinputlisting[style=cppsrc]{../code/src/solver.cpp}
+
+\subsection*{A.3 \code{main.cpp}}
+\lstinputlisting[style=cppsrc]{../code/src/main.cpp}
+
+\end{document}
