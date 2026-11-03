@@ -19,6 +19,9 @@ ads（王灿）Research Project 3 —— 从"只留下连接器"的残图恢复�
 
 环境：Windows + MinGW-W64（g++ ≥ 8，C++17）、CMake ≥ 3.21 与 Ninja、Python 3（脚本只用标准库）。
 
+程序从标准输入读、往标准输出写，所以下面用 `cmd` 风格的 `<` 重定向；
+PowerShell 不支持 `<`，把 `xxx.exe < file` 换成 `Get-Content file | xxx.exe` 即可。
+
 ```powershell
 # 1. 配置 + 编译（第一次或 CMakeLists.txt 改过后要重新配置）
 cmake --preset default

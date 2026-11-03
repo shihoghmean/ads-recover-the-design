@@ -43,6 +43,9 @@ tools/ 里的脚本都是 Python 3，只用标准库，不需要 numpy、matplot
 输入格式（题面）：第一行 n m，随后 n 行每行 m 个整数，0 表示空格，1..4 表示该格
 连接器要接出去的栅栏条数。程序从标准输入读，往标准输出写。
 
+下面的 "< 文件" 是 cmd 的重定向写法；在 PowerShell 里 "<" 不可用，等价写法是
+    Get-Content samples\sample1.in | .\recover.exe
+
 1) 跑题面的三组样例（在 code/ 内执行）：
 
        .\recover.exe < samples\sample1.in
