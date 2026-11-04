@@ -8,7 +8,7 @@ src/          主程序源码，三个文件，C++17
   solver.cpp       求解器的实现
   main.cpp         读入、调用求解器、按题目格式输出；命令行入口
 samples/      题面给的三组样例（输入 + 题面给的参考输出，仅作对照）
-tools/        辅助脚本：暴力、生成器、校验器、对拍、基准、注释率统计
+tools/        辅助脚本：暴力、生成器、校验器、对拍、基准、注释行统计
 Readme.txt    本文件
 
 浏览顺序：src/solver.h（先看类注释里那几条不变量）→ src/solver.cpp（init、propagate、
@@ -87,7 +87,7 @@ tools/ 里的脚本都是 Python 3，只用标准库，不需要 numpy、matplot
     python stress.py 400                对拍 400 组小实例 + 20 组大构造，末行给不符处数
     python bench.py                     跑报告第 3 章的五组实验（scale/heuristic/worst/hard/unsolvable）
     python bench.py prop                只跑传播开/关对照（报告 3.7 节那张表）
-    python stats.py                     统计 src/ 的注释行比例（课程要求 >= 30%）
+    python stats.py                     统计 src/ 每个文件的行数与注释行比例
 
 没有 Python 也不影响交作业：这些脚本只是复现测量与自查用的，主程序不需要它们。
 

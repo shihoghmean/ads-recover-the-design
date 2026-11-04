@@ -10,7 +10,7 @@ ads（王灿）Research Project 3 —— 从"只留下连接器"的残图恢复�
 
 | 题面 | 要求 | 本仓库 |
 | --- | --- | --- |
-| Programming（10 分） | 写程序，**注释必须充分** | `code/src/` 三个文件；注释率 30.0%（纯注释/总行，课程要求 ≥ 30%），逐文件数字用 `python code/tools/stats.py` 现算，报告 2.2 节末尾给了合计口径 |
+| Programming（10 分） | 写程序，**注释必须充分** | `code/src/` 三个文件；逐文件的行数、注释行数用 `python code/tools/stats.py` 现算 |
 | Testing（3 分） | 提供一组测试用例，填进测试报告 | 三组题面样例 + 编进程序的七个边界用例（`recover test`）+ 400 组与暴力解的对拍 + 五组性能实验，全部写进报告第 3 章的测试表（目的 / 期望 / 实际 / 可能原因 / 状态） |
 | Analysis（3 分） | 写分析与评论 | 报告第 4 章：传播为什么有效、随机无解为何 0 结点返回、与 f-factor / SAT / 流模型的对照、四条改进 |
 | Documentation（4 分） | Chapter 1（1）、Chapter 2（2）、整体版式（1） | [`documents/report.pdf`](documents/report.pdf)（18 页）：Ch1 讲题与背景、Ch2 讲建模与算法（伪代码在正文里）、Ch3 测试、Ch4 分析；源码在 `code/src/`，报告不复制全文 |
