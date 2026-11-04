@@ -54,27 +54,6 @@
 }
 \lstset{style=pseudo}
 
-% 附录里的源码：小一号、带行号，长行折行
-\lstdefinestyle{cppsrc}{
-  language=C++,
-  basicstyle=\ttfamily\scriptsize,
-  numberstyle=\tiny\color{gray},
-  numbers=left,
-  numbersep=6pt,
-  columns=fullflexible,
-  keepspaces=true,
-  frame=none,
-  xleftmargin=2.2em,
-  aboveskip=0.4em,
-  belowskip=0.4em,
-  breaklines=true,
-  breakatwhitespace=false,
-  tabsize=4,
-  showstringspaces=false,
-  extendedchars=true,
-  inputencoding=utf8
-}
-
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\tabhead}[1]{\textbf{#1}}
 
@@ -205,6 +184,8 @@ by Propagation and Backtracking}
 \bottomrule
 \end{tabular}
 \end{table}
+
+三个源文件共 621 行：\code{solver.h} 113 行、\code{solver.cpp} 340 行、\code{main.cpp} 166 行。纯注释 186 行，纯注释率 30.0\%，按纯注释/代码行算是 49.9\%，\code{python code/tools/stats.py} 可复现这两个数（课程要求注释行不低于 30\%）。
 
 表 \ref{tab:struct} 里有三个刻意的选择，都值得说一句。
 
@@ -645,41 +626,5 @@ We hereby declare that all the work done in this project titled ``Recover the De
 成员 A：\rule{3.9cm}{0.4pt} & 成员 B：\rule{3.9cm}{0.4pt} \\[2.4em]
 成员 C：\rule{3.9cm}{0.4pt} & \\
 \end{tabular}
-
-\clearpage
-\appendix
-\renewcommand{\thesection}{Appendix \Alph{section}}
-\section{Source Code}
-
-源码在提交包的 \code{code/src/} 下，三个文件、共 621 行，其中纯注释 186 行。按课程要求统计的注释率见表 \ref{tab:ratio}（口径：纯注释行 = 只含注释的行；宽口径 = 纯注释行加行尾注释行；分母为文件总行数）。
-
-\begin{table}[htbp]
-\centering
-\caption{源码注释率（\code{python code/tools/stats.py} 统计）}
-\label{tab:ratio}
-\small
-\begin{tabular}{lrrrrr}
-\toprule
-\rowcolor{gray!12}文件 & 总行 & 纯注释 & 行尾注释 & 纯注释率 & 宽口径 \\
-\midrule
-\code{main.cpp}     & 166 & 42 & 4  & 25.3\% & 27.7\% \\
-\code{solver.cpp}   & 340 & 97 & 5  & 28.5\% & 30.0\% \\
-\code{solver.h}     & 113 & 45 & 20 & 39.8\% & 57.5\% \\
-\midrule
-合计                & 621 & 186 & 29 & 30.0\% & 34.6\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-三个文件合计过 30\% 的线；按“纯注释行 / 代码行”算则是 49.9\%。\code{main.cpp} 单独不到 30\%，是因为它的读入输出代码本身没什么可解释的，硬加注释只会变成废话——课程要求按整个提交的代码算比例，这里据实说明。下面按“看代码的顺序”排：先看头文件的接口与不变量，再看求解器实现，最后看主程序的输入输出。
-
-\subsection*{A.1 \code{solver.h}}
-\lstinputlisting[style=cppsrc]{../code/src/solver.h}
-
-\subsection*{A.2 \code{solver.cpp}}
-\lstinputlisting[style=cppsrc]{../code/src/solver.cpp}
-
-\subsection*{A.3 \code{main.cpp}}
-\lstinputlisting[style=cppsrc]{../code/src/main.cpp}
 
 \end{document}
